@@ -3,7 +3,7 @@
 ;; Copyright (C) 2012  Evan Izaksonas-Smith
 
 ;; Author: Evan Izaksonas-Smith <tali713@rastafy>
-;; Keywords: 
+;; Keywords:
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -20,10 +20,12 @@
 
 ;;; Commentary:
 
-;; 
+;;
 
 ;;; Code:
-(require 'cl)
+(eval-when-compile
+  (require 'cl))
+(require 'cl-lib)
 
 (defvar tail-call--recur-sym (cl-gensym))
 (defvar real-defun (symbol-function 'defun))
@@ -71,12 +73,12 @@ The return value is undefined.
   (if (not lexical-binding)
       `(defun~ ,name ,arglist ,docstring ,@body)
     (let* ((decls (cond
-                  ((eq (car-safe docstring) 'declare)
-                   (prog1 (cdr docstring) (setq docstring nil)))
-                  ((eq (car-safe (car body)) 'declare)
-                   (prog1 (cdr (car body)) (setq body (cdr body))))))
+                   ((eq (car-safe docstring) 'declare)
+                    (prog1 (cdr docstring) (setq docstring nil)))
+                   ((eq (car-safe (car body)) 'declare)
+                    (prog1 (cdr (car body)) (setq body (cdr body))))))
            (decls (if (cl-find-if (lambda (pair)
-                                    (eq (car (pair))
+                                    (eq (car pair)
                                         'advertised-calling-convention))
                                   decls)
                       decls
@@ -93,7 +95,7 @@ The return value is undefined.
                      (f (apply (car f) name arglist (cdr x)))
                      ;; Yuck!!
                      ((and (featurep 'cl)
-                           (memq (car x)  ;C.f. cl-do-proclaim.
+                           (memq (car x) ;C.f. cl-do-proclaim.
                                  '(special inline notinline optimize warn)))
                       (if (null (stringp docstring))
                           (push (list 'declare x) body)
@@ -121,7 +123,7 @@ The return value is undefined.
                                    ;; function.
                                    (let ((args (cl-gensym))
                                          (return (cl-gensym))
-                                         (recur (cl-gensym))) 
+                                         (recur (cl-gensym)))
                                      `(lambda (&rest ,args)
                                         ;; capture the docstring if any.
                                         ,@(when (stringp (car body))
@@ -143,23 +145,25 @@ The return value is undefined.
                                         ;; form. as though we had explicitly recurred
                                         ;; in any location where optimization
                                         ;; occured.
+                                        ;;
+                                        ;; we establish an exit point and enter into
+                                        ;; iteration each time the call frame will be
+                                        ;; overwritten.  and bound as a lambda.
+
+                                        ;; we capture as args for the subsequent
+                                        ;; iteration that which is thrown by a recur
+                                        ;; form but if the result doesn't trigger a
+                                        ;; recur form, instead the value itself is
+                                        ;; returned (even if the call is itself
+                                        ;; recursive).
                                         (cl-flet ((,tail-call--recur-sym
                                                    (&rest ,args)
                                                    (throw ',recur ,args)))
-                                          ;; we establish an exit point
+
                                           (catch ',return
-                                            ;; to extablish an iterative form
                                             (while t
-                                              ;; we capture as args our for the
-                                              ;; subsequent iteration that which is
-                                              ;; thrown by a recur form
                                               (setq ,args
                                                     (catch ',recur
-                                                      ;; but if the result doesn't
-                                                      ;; trigger a recur form,
-                                                      ;; instead the value is
-                                                      ;; returned (even if the call
-                                                      ;; is none the less recursive).
                                                       (throw ',return
                                                              (apply (lambda ,arglist ,@body)
                                                                     ,args))))))))))))))))
@@ -195,15 +199,6 @@ The return value is undefined.
                                     (apply (lambda ,arglist ,@body) ,args))))))))
        (apply #'recur (list ,@(mapcar #'second bindings))))))
 
-(defun~ tail-call-optimize (name form)
-  (if (consp form)
-      (if (eq name (car form))
-          `(,tail-call--recur-sym ,@(cdr form))
-        (funcall (or (tail-optimize-function (car form))
-                     (lambda (_ form) form))
-                 name form))
-    form))
-
 (defmacro set-tail-optimize-function (symbol optimization-function)
   (declare (indent defun))
   `(plist-put (symbol-plist ,symbol) 'tail-optimize-fun
@@ -213,16 +208,25 @@ The return value is undefined.
   `(plist-get (symbol-plist ',symbol)
               'tail-optimize-fun))
 
+(defun~ tail-call-optimize (name form)
+  (if (consp form)
+      (if (eq name (car form))
+          `(,tail-call--recur-sym ,@(cdr form))
+        (funcall (or (tail-optimize-function (car form))
+                     (lambda (_ form) form))
+                 name form))
+    form))
 
 (defun tail-call-optimize-progn (name form)
   (setcar (last form)
           (tail-call-optimize name (car (last form))))
   form)
 
-;; Make this its own form
 (defmacro add-tail-optimizations (&rest tail-optimizations)
   `(cl-macrolet ((gtco (symbol)
-                      `(get-tail-optimize-function ,symbol)))
+                      `(get-tail-optimize-function ,symbol))
+                 (tco (name form)
+                      `(tail-call-optimize ,name ,form)))
      ,@(mapcar (lambda (pair)
                `(set-tail-optimize-function
                   ',(car pair)
@@ -235,11 +239,12 @@ The return value is undefined.
      (let* (gtco let))
      (if (lambda (name form)
            (setf (third form)
-                 (tail-call-optimize name (third form)))
+                 (tco name (third form)))
            (funcall (gtco progn) name form)))
      (cond (lambda (name form)
              (setcdr form
-                     (mapcar #'tail-call-optimize-progn (cdr form)))
+                     (mapcar (apply-partially (gtco progn) name)
+                             (cdr form)))
              form)))
 
 (provide 'tail-call)
@@ -259,7 +264,7 @@ The return value is undefined.
 ;;     (if (< count 1) acc
 ;;       (recur (1- count)
 ;;              (* count acc))))
- 
+
 ;; (pp (symbol-function
 ;;      (defun foo-simple (&rest xs)
 ;;        "foo"
