@@ -25,7 +25,7 @@
 ;;; Code:
 (require 'cl)
 
-(defvar tail-call--recur-sym (gensym))
+(defvar tail-call--recur-sym (cl-gensym))
 (defvar real-defun (symbol-function 'defun))
 (defalias 'defun~ real-defun)
 
@@ -106,18 +106,29 @@ The return value is undefined.
                        (list 'quote name)
                        (list 'function
                              (progn
+                               ;; Capture the body and optimize its tail position.
                                (let ((old-body (copy-tree body)))
                                  (setcar (last body)
                                          (tail-call-optimize name (car (last body))))
+                                 ;; if the body is unchanged use the original form.
                                  (if (tree-equal old-body body)
                                      (cons 'lambda (cons arglist body))
-                                   (let ((args (gensym))
-                                         (return (gensym))
-                                         (recur (gensym))) 
+                                   ;; here begins the magic, some of this could be
+                                   ;; cleaned up to simplify making the currect
+                                   ;; function signature.  we create the symbols
+                                   ;; recur and return for our catch and throw blocks
+                                   ;; args is the actual argument list for the
+                                   ;; function.
+                                   (let ((args (cl-gensym))
+                                         (return (cl-gensym))
+                                         (recur (cl-gensym))) 
                                      `(lambda (&rest ,args)
+                                        ;; capture the docstring if any.
                                         ,@(when (stringp (car body))
                                             (prog1 (list (car body))
                                               (setq body (cdr body))))
+                                        ;; capture and place an interactive form in
+                                        ;; the body, if one exitsts.
                                         ,@(let ((interactive
                                                  (cl-find-if (lambda (sexp)
                                                                (and (consp sexp)
@@ -127,14 +138,28 @@ The return value is undefined.
                                             (when interactive
                                               (setq body (remove interactive body))
                                               `(,interactive)))
-                                        
+                                        ;; and the true secret lives here, we bind a
+                                        ;; function to throw the args back to a recur
+                                        ;; form. as though we had explicitly recurred
+                                        ;; in any location where optimization
+                                        ;; occured.
                                         (cl-flet ((,tail-call--recur-sym
                                                    (&rest ,args)
                                                    (throw ',recur ,args)))
+                                          ;; we establish an exit point
                                           (catch ',return
+                                            ;; to extablish an iterative form
                                             (while t
+                                              ;; we capture as args our for the
+                                              ;; subsequent iteration that which is
+                                              ;; thrown by a recur form
                                               (setq ,args
                                                     (catch ',recur
+                                                      ;; but if the result doesn't
+                                                      ;; trigger a recur form,
+                                                      ;; instead the value is
+                                                      ;; returned (even if the call
+                                                      ;; is none the less recursive).
                                                       (throw ',return
                                                              (apply (lambda ,arglist ,@body)
                                                                     ,args))))))))))))))))
@@ -154,9 +179,9 @@ The return value is undefined.
   (declare (indent 2))
   (setcar (last body)
           (tail-call-optimize 'recur (car (last body))))
-  (let ((args (gensym))
-        (return (gensym))
-        (recur (gensym))
+  (let ((args (cl-gensym))
+        (return (cl-gensym))
+        (recur (cl-gensym))
         (arglist (mapcar #'first bindings)))
     `(cl-labels
          ((,tail-call--recur-sym (&rest ,args)
