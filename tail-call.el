@@ -115,16 +115,12 @@ The return value is undefined.
                                  ;; if the body is unchanged use the original form.
                                  (if (tree-equal old-body body)
                                      (cons 'lambda (cons arglist body))
-                                   ;; here begins the magic, some of this could be
-                                   ;; cleaned up to simplify making the currect
-                                   ;; function signature.  we create the symbols
-                                   ;; recur and return for our catch and throw blocks
-                                   ;; args is the actual argument list for the
-                                   ;; function.
+                                   ;; some of this could be cleaned up to simplify
+                                   ;; making the correct function signature.
                                    (let ((args (cl-gensym))
                                          (return (cl-gensym))
                                          (recur (cl-gensym)))
-                                     `(lambda (&rest ,args)
+                                     `(lambda ,arglist
                                         ;; capture the docstring if any.
                                         ,@(when (stringp (car body))
                                             (prog1 (list (car body))
@@ -140,11 +136,10 @@ The return value is undefined.
                                             (when interactive
                                               (setq body (remove interactive body))
                                               `(,interactive)))
-                                        ;; and the true secret lives here, we bind a
-                                        ;; function to throw the args back to a recur
-                                        ;; form. as though we had explicitly recurred
-                                        ;; in any location where optimization
-                                        ;; occured.
+                                        ;; we bind a function to throw the args back
+                                        ;; to a recur form. as though we had
+                                        ;; explicitly recurred in any location where
+                                        ;; optimization occured.
                                         ;;
                                         ;; we establish an exit point and enter into
                                         ;; iteration each time the call frame will be
@@ -156,20 +151,33 @@ The return value is undefined.
                                         ;; recur form, instead the value itself is
                                         ;; returned (even if the call is itself
                                         ;; recursive).
-                                        (cl-flet ((,tail-call--recur-sym
-                                                   (&rest ,args)
-                                                   (throw ',recur ,args)))
+                                        (let ((,args (list ,@(tail-optimize-process-args
+                                                              arglist))))
+                                          (cl-flet ((,tail-call--recur-sym
+                                                     (&rest ,args)
+                                                     (throw ',recur ,args)))
 
-                                          (catch ',return
-                                            (while t
-                                              (setq ,args
-                                                    (catch ',recur
-                                                      (throw ',return
-                                                             (apply (lambda ,arglist ,@body)
-                                                                    ,args))))))))))))))))
+                                            (catch ',return
+                                              (while t
+                                                (setq ,args
+                                                      (catch ',recur
+                                                        (throw ',return
+                                                               (apply (lambda ,arglist ,@body)
+                                                                      ,args)))))))))))))))))
         (if declarations
             (cons 'prog1 (cons def declarations))
           def)))))
+
+(defun tail-optimize-process-args (arglist)
+  (let (rest)
+    (case (car arglist)
+      (&optional (tail-optimize-process-args (cdr arglist)))
+      (&rest (setq rest
+                   (cadr arglist)))
+      (t (cons (car arglist)
+               (when (cdr arglist)
+                 (tail-optimize-process-args (cdr arglist))))))))
+
 
 ;;; This sets defun as our new function
 (defalias 'defun 'defun-tail-call)
@@ -252,12 +260,12 @@ The return value is undefined.
 
 ;;; Examples:
 
-;; (pp (symbol-function
-;;      (defun triangle (x &optional out)
-;;        "foo"
-;;        (let ((out (or out 0)))
-;;          (if (< x 1) out
-;;            (triangle (1- x) (+ x out)))))))
+(pp (macroexpand
+     '(defun triangle (x &optional out)
+        "foo"
+        (let ((out (or out 0)))
+          (if (< x 1) out
+            (triangle (1- x) (+ x out)))))))
 
 ;; (let-recur ((count 5)
 ;;             (acc   1))
