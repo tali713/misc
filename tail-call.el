@@ -24,9 +24,13 @@
 
 ;;; Code:
 (eval-when-compile
-  (require 'cl))
-(require 'cl-lib)
+  (require 'cl)
+  (when (ignore-errors (symbol-function 'defun~))
+    (or (eq (symbol-function 'defun~)
+            (symbol-function 'defun))
+        (defalias 'defun 'defun~))))
 
+(require 'cl-lib)
 (defvar tail-call--recur-sym (cl-gensym))
 (defvar real-defun (symbol-function 'defun))
 (defalias 'defun~ real-defun)
@@ -171,14 +175,6 @@ The return value is undefined.
             (cons 'prog1 (cons def declarations))
           def)))))
 
-;;; This sets defun as our new function
-(defalias 'defun 'defun-tail-call)
-;;; This will revert
-;;
-;; (defalias 'defun 'defun~)
-
-
-
 (defmacro let-recur (bindings &rest body)
   (declare (indent 2))
   (setcar (last body)
@@ -189,7 +185,7 @@ The return value is undefined.
         (arglist (mapcar #'first bindings)))
     `(cl-labels
          ((,tail-call--recur-sym (&rest ,args)
-                                (throw ',recur ,args))
+                                 (throw ',recur ,args))
           (recur (&rest ,args)
                  (catch ',return
                    (while t
@@ -198,6 +194,15 @@ The return value is undefined.
                              (throw ',return
                                     (apply (lambda ,arglist ,@body) ,args))))))))
        (apply #'recur (list ,@(mapcar #'second bindings))))))
+
+(defun tail-call-optimize (name form)
+  (if (consp form)
+      (if (eq name (car form))
+          `(,tail-call--recur-sym ,@(cdr form))
+        (funcall (or (eval  `(get-tail-optimize-function ,(car form)))
+                     (lambda (_ form) form))
+                 name form))
+    form))
 
 (defmacro set-tail-optimize-function (symbol optimization-function)
   (declare (indent defun))
@@ -208,15 +213,6 @@ The return value is undefined.
   `(plist-get (symbol-plist ',symbol)
               'tail-optimize-fun))
 
-(defun~ tail-call-optimize (name form)
-  (if (consp form)
-      (if (eq name (car form))
-          `(,tail-call--recur-sym ,@(cdr form))
-        (funcall (or (tail-optimize-function (car form))
-                     (lambda (_ form) form))
-                 name form))
-    form))
-
 (defun tail-call-optimize-progn (name form)
   (setcar (last form)
           (tail-call-optimize name (car (last form))))
@@ -224,77 +220,73 @@ The return value is undefined.
 
 (defmacro add-tail-optimizations (&rest tail-optimizations)
   `(cl-macrolet ((gtco (symbol)
-                      `(get-tail-optimize-function ,symbol))
+                       `(get-tail-optimize-function ,symbol))
                  (tco (name form)
                       `(tail-call-optimize ,name ,form)))
      ,@(mapcar (lambda (pair)
-               `(set-tail-optimize-function
-                  ',(car pair)
-                  ,(cadr pair)))
-             tail-optimizations)))
+                 `(set-tail-optimize-function
+                   ',(car pair)
+                   ,(cadr pair)))
+               tail-optimizations)))
 
 (add-tail-optimizations
-     (progn #'tail-call-optimize-progn)
-     (let (gtco progn))
-     (let* (gtco let))
-     (if (lambda (name form)
-           (setf (third form)
-                 (tco name (third form)))
-           (funcall (gtco progn) name form)))
-     (cond (lambda (name form)
-             (setcdr form
-                     (mapcar (apply-partially (gtco progn) name)
-                             (cdr form)))
-             form)))
+ (progn #'tail-call-optimize-progn)
+ (let (gtco progn))
+ (let* (gtco let))
+ (if (lambda (name form)
+       (setf (third form)
+             (tco name (third form)))
+       (funcall (gtco progn) name form)))
+ (cond (lambda (name form)
+         (setcdr form
+                 (mapcar (apply-partially (gtco progn) name)
+                         (cdr form)))
+         form)))
 
 (provide 'tail-call)
 ;;; tail-call.el ends here
 
 ;;; Examples:
+;;; This sets defun as our new function
+;; (defalias 'defun 'defun-tail-call)
+;;
+;;; This will revert
+;;
+;; (defalias 'defun 'defun~)
 
-(pp (symbol-function
-     (defun triangle (x &optional out)
-       "foo"
-       (let ((out (or out 0)))
-         (if (< x 1) out
-           (triangle (1- x) (+ x out)))))))
-(closure
- (t)
- (&rest G76818)
- "foo"
- (cl-flet
-     ((G76648
-       (&rest G76818)
-       (throw 'G76820 G76818)))
-   (catch 'G76819
-     (while t
-       (setq G76818
-             (catch 'G76820
-               (throw 'G76819
-                      (apply
-                       (lambda
-                         (x &optional out)
-                         (let
-                             ((out
-                               (or out 0)))
-                           (if
-                               (< x 1)
-                               out
-                             (G76648
-                              (1- x)
-                              (+ x out)))))
-                       G76818))))))))
-(defun bee (foo &rest var)
-  (bee zz zz))
+;; example with:
+;; (defalias 'defun 'defun-tail-call)
+;; (pp (macroexpand '(defun triangle (x &optional out)
+;;                     "foo"
+;;                     (let ((out (or out 0)))
+;;                       (if (< x 1) out
+;;                         (triangle (1- x) (+ x out)))))))
 
-(let-recur ((count 5)
-            (acc   1))
-    (if (< count 1) acc
-      (recur (1- count)
-             (* count acc))))
+;; (prog1
+;;     (defalias 'triangle
+;;       #'(lambda (&rest G79408)
+;;           "foo"
+;;           (cl-flet ((G79401 (&rest G79408)
+;;                             (throw 'G79410 G79408)))
+;;             (catch 'G79409
+;;               (while t
+;;                 (setq G79408
+;;                       (catch 'G79410
+;;                         (throw 'G79409
+;;                                (apply (lambda (x &optional out)
+;;                                         (let ((out (or out 0)))
+;;                                           (if (< x 1) out
+;;                                             (G79401 (1- x) (+ x out)))))
+;;                                       G79408)))))))))
+;;   (set-advertised-calling-convention 'triangle '(x &optional out) '""))
 
-(pp (symbol-function
-     (defun foo-simple (&rest xs)
-       "foo"
-        (apply #'+ xs))))
+;; (let-recur ((count 5)
+;;             (acc   1))
+;;     (if (< count 1) acc
+;;       (recur (1- count)
+;;              (* count acc))))
 
+;; (pp (symbol-function
+;;      (defun foo-simple (&rest xs)
+;;        "foo"
+;;         (apply #'+ xs))))
