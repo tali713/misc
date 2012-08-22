@@ -20,15 +20,42 @@
 
 ;;; Commentary:
 
+;; So this was made on a lark, it is not to be trusted or used in any
+;; real code, it replaces DEFUN, so you know I mean business when I
+;; say, you are fool if you decide to use this in production code.
 ;;
+;; What's wrong with this code: Well, quite frankly any mechanisms for
+;; handling tail recursion should live in eval not in defun, for
+;; several reasons.  Primarilly eval is the place where evaluation
+;; occurs, changing the evaluation model on a per defun basis is
+;; wrong.  Further, eval sees expanded code greatly simplifying
+;; tail-recursion.
+;;
+;; However, this way we can rely on lexical binding and test the
+;; evaluation model without disturbance in the core.
+;;
+;; Another problem with this, is that while it promises a general
+;; method for tail recursion, it currently only allows for self
+;; recursion optimizations.
+;;
+;; What's right: well, though it would certainly be interesting to
+;; create a prover that manages to discern whether or not a call can
+;; be optimized, isn't it so much easier to simply store the function
+;; which optimizes a form parallel to the definition?  Yeah, that's
+;; what I thought you'd say, even with optimizing happening during
+;; defun this allows a future implimentation to allow such a function
+;; to simply be declared.
 
 ;;; Code:
 (eval-when-compile
-  (require 'cl)
-  (when (ignore-errors (symbol-function 'defun~))
+  (require 'cl))
+
+(when (fboundp 'defun~)
     (or (eq (symbol-function 'defun~)
             (symbol-function 'defun))
-        (defalias 'defun 'defun~))))
+        (defalias 'defun 'defun~)))
+(eval-after-load "tail-call"
+  '(defalias 'defun 'defun-tail-call))
 
 (require 'cl-lib)
 (defvar tail-call--recur-sym (cl-gensym))
@@ -169,6 +196,7 @@ The return value is undefined.
                                               (setq ,args
                                                     (catch ',recur
                                                       (throw ',return
+                                                             ;; in the future replacing this lambda
                                                              (apply (lambda ,arglist ,@body)
                                                                     ,args))))))))))))))))
         (if declarations
@@ -199,7 +227,7 @@ The return value is undefined.
   (if (consp form)
       (if (eq name (car form))
           `(,tail-call--recur-sym ,@(cdr form))
-        (funcall (or (eval  `(get-tail-optimize-function ,(car form)))
+        (funcall (or (get-tail-optimize-function (car form))
                      (lambda (_ form) form))
                  name form))
     form))
@@ -209,9 +237,9 @@ The return value is undefined.
   `(plist-put (symbol-plist ,symbol) 'tail-optimize-fun
               ,optimization-function))
 
-(defmacro get-tail-optimize-function (symbol)
-  `(plist-get (symbol-plist ',symbol)
-              'tail-optimize-fun))
+(defun get-tail-optimize-function (symbol)
+  (plist-get (symbol-plist symbol)
+             'tail-optimize-fun))
 
 (defun tail-call-optimize-progn (name form)
   (setcar (last form)
@@ -220,7 +248,7 @@ The return value is undefined.
 
 (defmacro add-tail-optimizations (&rest tail-optimizations)
   `(cl-macrolet ((gtco (symbol)
-                       `(get-tail-optimize-function ,symbol))
+                       `(get-tail-optimize-function ',symbol))
                  (tco (name form)
                       `(tail-call-optimize ,name ,form)))
      ,@(mapcar (lambda (pair)
@@ -241,7 +269,13 @@ The return value is undefined.
          (setcdr form
                  (mapcar (apply-partially (gtco progn) name)
                          (cdr form)))
-         form)))
+         form))
+ (case (lambda (name form)
+         (setcdr form
+                 (funcall (gtco cond) name
+                          (cdr form)))
+         form))
+ (pcase (gtco case)))
 
 (provide 'tail-call)
 ;;; tail-call.el ends here
@@ -290,3 +324,34 @@ The return value is undefined.
 ;;      (defun foo-simple (&rest xs)
 ;;        "foo"
 ;;         (apply #'+ xs))))
+
+;; (defmacro pdefun (name arglist &rest body)
+;;   "Like ordinary defun but uses pcases.  ARGLIST is strictly for
+;; advertising the canonical signature."
+;;   (declare (indent defun)
+;;            (advertised-calling-convention (NAME ARGLIST [DOCSTRING] &rest PATTERNS) ""))
+;;   (let ((args (gensym)))
+;;     `(defun ,name (&rest ,args)
+;;        (declare (advertised-calling-convention ,arglist ""))
+;;        ,@(pcase body
+;;              (`(,(and docstring (pred stringp)) . ,body)
+;;               `(,docstring
+;;                 (pcase ,args ,@body)))
+;;              (body
+;;               `((pcase ,args ,@body)))))))
+
+;; (pdefun preverse (list | in out)
+;;     "A simple test of pdefun."
+;;     (`(,list)
+;;      (preverse list nil))
+    
+;;     (`(nil ,reverse)
+;;      reverse)
+
+;;     (`((,head . ,tail) ,reverse)
+;;      (preverse tail `(,head . ,reverse))))
+
+;; (symbol-function 'preverse)
+;; (preverse (number-sequence 1 5000))
+
+
