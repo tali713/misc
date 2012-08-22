@@ -252,20 +252,49 @@ The return value is undefined.
 
 ;;; Examples:
 
-;; (pp (symbol-function
-;;      (defun triangle (x &optional out)
-;;        "foo"
-;;        (let ((out (or out 0)))
-;;          (if (< x 1) out
-;;            (triangle (1- x) (+ x out)))))))
+(pp (symbol-function
+     (defun triangle (x &optional out)
+       "foo"
+       (let ((out (or out 0)))
+         (if (< x 1) out
+           (triangle (1- x) (+ x out)))))))
+(closure
+ (t)
+ (&rest G76818)
+ "foo"
+ (cl-flet
+     ((G76648
+       (&rest G76818)
+       (throw 'G76820 G76818)))
+   (catch 'G76819
+     (while t
+       (setq G76818
+             (catch 'G76820
+               (throw 'G76819
+                      (apply
+                       (lambda
+                         (x &optional out)
+                         (let
+                             ((out
+                               (or out 0)))
+                           (if
+                               (< x 1)
+                               out
+                             (G76648
+                              (1- x)
+                              (+ x out)))))
+                       G76818))))))))
+(defun bee (foo &rest var)
+  (bee zz zz))
 
-;; (let-recur ((count 5)
-;;             (acc   1))
-;;     (if (< count 1) acc
-;;       (recur (1- count)
-;;              (* count acc))))
+(let-recur ((count 5)
+            (acc   1))
+    (if (< count 1) acc
+      (recur (1- count)
+             (* count acc))))
 
-;; (pp (symbol-function
-;;      (defun foo-simple (&rest xs)
-;;        "foo"
-;;        (apply #'+ xs))))
+(pp (symbol-function
+     (defun foo-simple (&rest xs)
+       "foo"
+        (apply #'+ xs))))
+
