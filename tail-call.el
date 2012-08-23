@@ -154,7 +154,8 @@ The return value is undefined.
                                    ;; function.
                                    (let ((args (cl-gensym))
                                          (return (cl-gensym))
-                                         (recur (cl-gensym)))
+                                         (recur (cl-gensym))
+                                         (real-call (cl-gensym)))
                                      `(lambda (&rest ,args)
                                         ;; capture the docstring if any.
                                         ,@(when (stringp (car body))
@@ -187,18 +188,20 @@ The return value is undefined.
                                         ;; recur form, instead the value itself is
                                         ;; returned (even if the call is itself
                                         ;; recursive).
+                                        ;;
+                                        ;; This is going to allow for proper
+                                        ;; tail-recursion
                                         (cl-flet ((,tail-call--recur-sym
                                                    (&rest ,args)
                                                    (throw ',recur ,args)))
-
-                                          (catch ',return
-                                            (while t
-                                              (setq ,args
-                                                    (catch ',recur
-                                                      (throw ',return
-                                                             ;; in the future replacing this lambda
-                                                             (apply (lambda ,arglist ,@body)
-                                                                    ,args))))))))))))))))
+                                          (let ((,real-call (cons (lambda ,arglist ,@body) ,args)))
+                                            (catch ',return
+                                              (while t
+                                                (setq ,args
+                                                      (catch ',recur
+                                                        (throw ',return
+                                                               (apply (car ,real-call)
+                                                                      (cdr ,real-call))))))))))))))))))
         (if declarations
             (cons 'prog1 (cons def declarations))
           def)))))
@@ -223,10 +226,16 @@ The return value is undefined.
                                     (apply (lambda ,arglist ,@body) ,args))))))))
        (apply #'recur (list ,@(mapcar #'second bindings))))))
 
+(defun get-real-function (symbol)
+  (or (plist-get (symbol-plist symbol)
+                 'real-function)
+      symbol))
+
 (defun tail-call-optimize (name form)
   (if (consp form)
       (if (eq name (car form))
-          `(,tail-call--recur-sym ,@(cdr form))
+          `(,tail-call--recur-sym ,@(cons (get-real-function (car form))
+                                          (cdr form)))
         (funcall (or (get-tail-optimize-function (car form))
                      (lambda (_ form) form))
                  name form))
@@ -290,11 +299,11 @@ The return value is undefined.
 
 ;; example with:
 ;; (defalias 'defun 'defun-tail-call)
-;; (pp (macroexpand '(defun triangle (x &optional out)
-;;                     "foo"
-;;                     (let ((out (or out 0)))
-;;                       (if (< x 1) out
-;;                         (triangle (1- x) (+ x out)))))))
+;; (defun triangle (x &optional out)
+;;        "foo"
+;;        (let ((out (or out 0)))
+;;          (if (< x 1) out
+;;            (triangle (1- x) (+ x out)))))
 
 ;; (prog1
 ;;     (defalias 'triangle
@@ -340,18 +349,16 @@ The return value is undefined.
 ;;              (body
 ;;               `((pcase ,args ,@body)))))))
 
-;; (pdefun preverse (list | in out)
-;;     "A simple test of pdefun."
-;;     (`(,list)
-;;      (preverse list nil))
+(pdefun preverse (list | in out)
+    "A simple test of pdefun."
+    (`(,list)
+     (preverse list nil))
     
-;;     (`(nil ,reverse)
-;;      reverse)
+    (`(nil ,reverse)
+     reverse)
 
-;;     (`((,head . ,tail) ,reverse)
-;;      (preverse tail `(,head . ,reverse))))
+    (`((,head . ,tail) ,reverse)
+     (preverse tail `(,head . ,reverse))))
 
 ;; (symbol-function 'preverse)
 ;; (preverse (number-sequence 1 5000))
-
-
