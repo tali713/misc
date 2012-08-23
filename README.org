@@ -8,3 +8,5 @@ misc
    the time.  It is still in great need of work, but it establishes a drop in
    replacement for defun that optmizes tail-recursion in lexical environments,
    and establishes a framework for extending to further optimizable forms.
+
+   Will soon include the capacity to handle non-self calls
