@@ -190,7 +190,6 @@ The return value is undefined.
                                         (cl-flet ((,tail-call--recur-sym
                                                    (&rest ,args)
                                                    (throw ',recur ,args)))
-
                                           (catch ',return
                                             (while t
                                               (setq ,args
