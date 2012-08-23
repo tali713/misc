@@ -152,6 +152,7 @@ The return value is undefined.
                                    ;; recur and return for our catch and throw blocks
                                    ;; args is the actual argument list for the
                                    ;; function.
+                                   (set-real-function name `(lambda ,arglist ,@body))
                                    (let ((args (cl-gensym))
                                          (return (cl-gensym))
                                          (recur (cl-gensym))
@@ -194,14 +195,15 @@ The return value is undefined.
                                         (cl-flet ((,tail-call--recur-sym
                                                    (&rest ,args)
                                                    (throw ',recur ,args)))
-                                          (let ((,real-call (cons (lambda ,arglist ,@body) ,args)))
+                                          (let ((,real-call (cons ',name ,args)))
                                             (catch ',return
                                               (while t
-                                                (setq ,args
+                                                (setq ,real-call
                                                       (catch ',recur
                                                         (throw ',return
-                                                               (apply (car ,real-call)
-                                                                      (cdr ,real-call))))))))))))))))))
+                                                               (eval `(apply ,(get-real-function
+                                                                               (car ,real-call))
+                                                                             ',(cdr ,real-call)))))))))))))))))))
         (if declarations
             (cons 'prog1 (cons def declarations))
           def)))))
@@ -231,11 +233,16 @@ The return value is undefined.
                  'real-function)
       symbol))
 
+(defun set-real-function (symbol function)
+  (setplist symbol (plist-put (symbol-plist symbol)
+                              'real-function
+                              function)))
+
 (defun tail-call-optimize (name form)
   (if (consp form)
       (if (eq name (car form))
-          `(,tail-call--recur-sym ,@(cons (get-real-function (car form))
-                                          (cdr form)))
+          `(,tail-call--recur-sym (quote ,(car form))
+                                  ,@(cdr form))
         (funcall (or (get-tail-optimize-function (car form))
                      (lambda (_ form) form))
                  name form))
@@ -348,17 +355,19 @@ The return value is undefined.
 ;;                 (pcase ,args ,@body)))
 ;;              (body
 ;;               `((pcase ,args ,@body)))))))
-
 (pdefun preverse (list | in out)
-    "A simple test of pdefun."
-    (`(,list)
-     (preverse list nil))
-    
-    (`(nil ,reverse)
-     reverse)
+                    "A simple test of pdefun."
+                    (`(,list)
+                     (preverse list nil))
+                    
+                    (`(nil ,reverse)
+                     reverse)
 
-    (`((,head . ,tail) ,reverse)
-     (preverse tail `(,head . ,reverse))))
+                    (`((,head . ,tail) ,reverse)
+                     (preverse tail `(,head . ,reverse))))
 
-;; (symbol-function 'preverse)
-;; (preverse (number-sequence 1 5000))
+(pp (get-real-function 'preverse))
+
+(pp (symbol-function 'preverse))
+
+;;  (preverse (number-sequence 1 500))
