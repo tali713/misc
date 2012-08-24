@@ -83,7 +83,7 @@
 ;;                        (throw ',return
 ;;                               (apply (lambda ,arglist ,@real-body) ,args)))))))))))
 
-(defun tail-call--recur (&rest args)
+(defun~ tail-call--recur (&rest args)
   (throw :recur args))
 
 (defmacro defun-tail-call (name arglist &optional docstring &rest body)
@@ -147,15 +147,11 @@ The return value is undefined.
                                  ;; if the body is unchanged use the original form.
                                  (if (tree-equal old-body body)
                                      (cons 'lambda (cons arglist body))
-                                   ;; here begins the magic, some of this could be
-                                   ;; cleaned up to simplify making the currect
-                                   ;; function signature.  we create the symbols
-                                   ;; recur and return for our catch and throw blocks
-                                   ;; args is the actual argument list for the
-                                   ;; function.
+                                   ;; some of this could be cleaned up
+                                   ;; to simplify making the currect
+                                   ;; function signature.
                                    (set-real-function name `(lambda ,arglist ,@body))
                                    (let ((args (cl-gensym))
-                                         (return (cl-gensym))                                         
                                          (real-call (cl-gensym)))
                                      `(lambda (&rest ,args)
                                         ;; capture the docstring if any.
@@ -173,31 +169,12 @@ The return value is undefined.
                                             (when interactive
                                               (setq body (remove interactive body))
                                               `(,interactive)))
-                                        ;; and the true secret lives here, we bind a
-                                        ;; function to throw the args back to a recur
-                                        ;; form. as though we had explicitly recurred
-                                        ;; in any location where optimization
-                                        ;; occured.
-                                        ;;
-                                        ;; we establish an exit point and enter into
-                                        ;; iteration each time the call frame will be
-                                        ;; overwritten.  and bound as a lambda.
-
-                                        ;; we capture as args for the subsequent
-                                        ;; iteration that which is thrown by a recur
-                                        ;; form but if the result doesn't trigger a
-                                        ;; recur form, instead the value itself is
-                                        ;; returned (even if the call is itself
-                                        ;; recursive).
-                                        ;;
-                                        ;; This is going to allow for proper
-                                        ;; tail-recursion
                                         (let ((,real-call (cons ',name ,args)))
-                                          (catch ',return
+                                          (catch :return
                                             (while t
                                               (setq ,real-call
                                                     (catch :recur
-                                                      (throw ',return
+                                                      (throw :return
                                                              (apply (get-real-function (car ,real-call))
                                                                     (cdr ,real-call)))))))))))))))))
         (if declarations
@@ -208,28 +185,27 @@ The return value is undefined.
   (declare (indent 2))
   (setcar (last body)
           (tail-call-optimize 'recur (car (last body))))
-  (let ((args (cl-gensym))
-        (return (cl-gensym))
-        (recur (cl-gensym))
-        (arglist (mapcar #'first bindings)))
+  (let ((arglist (mapcar #'first bindings))
+        (args (cl-gensym))
+        (real-call (cl-gensym)))
     `(cl-labels
-         ((tail-call--recur (&rest ,args)
-                            (throw ',recur ,args))
-          (recur (&rest ,args)
-                 (catch ',return
-                   (while t
-                     (setq ,args
-                           (catch ',recur
-                             (throw ',return
-                                    (apply (lambda ,arglist ,@body) ,args))))))))
+         ((recur (&rest ,args)
+                 (let ((,real-call (cons 'recur ,args)))
+                   (catch :return
+                     (while t
+                       (setq ,real-call
+                             (catch :recur
+                               (throw :return
+                                      (apply (lambda ,arglist ,@body)
+                                             (cdr ,real-call))))))))))
        (apply #'recur (list ,@(mapcar #'second bindings))))))
 
-(defun get-real-function (symbol)
+(defun~ get-real-function (symbol)
   (or (plist-get (symbol-plist symbol)
                  'real-function)
       symbol))
 
-(defun set-real-function (symbol function)
+(defun~ set-real-function (symbol function)
   (setplist symbol (plist-put (symbol-plist symbol)
                               'real-function
                               function)))
@@ -244,32 +220,29 @@ The return value is undefined.
 ;;                  name form))
 ;;     form))
 
-(defun tail-call-optimize (name form)
+(defun~ tail-call-optimize (name form)
   (if (consp form)
-      (if (eq name :any)
-          (if (functionp (car form))
-              `(tail-call--recur (quote ,(car form))
-                                 ,@(cdr form))
-            (funcall (or (get-tail-optimize-function (car form))
-                         (lambda (_ form) form))
-                     name form))
-        (if (eq name (car form))
-            `(tail-call--recur ,@(cdr form))
-          (funcall (or (get-tail-optimize-function (car form))
-                       (lambda (_ form) form))
-                   name form)))
+      (if (if (eq name :any)
+              (functionp (car form))
+            (eq name (car form)))
+          `(tail-call--recur (quote ,(car form))
+                             ,@(cdr form))
+        (funcall (or (get-tail-optimize-function (car form))
+                     (lambda (_ form) form))
+                 name form))
+
     form))
- 
+
 (defmacro set-tail-optimize-function (symbol optimization-function)
   (declare (indent defun))
   `(plist-put (symbol-plist ,symbol) 'tail-optimize-fun
               ,optimization-function))
 
-(defun get-tail-optimize-function (symbol)
+(defun~ get-tail-optimize-function (symbol)
   (plist-get (symbol-plist symbol)
              'tail-optimize-fun))
 
-(defun tail-call-optimize-progn (name form)
+(defun~ tail-call-optimize-progn (name form)
   (setcar (last form)
           (tail-call-optimize name (car (last form))))
   form)
@@ -281,8 +254,8 @@ The return value is undefined.
                       `(tail-call-optimize ,name ,form)))
      ,@(mapcar (lambda (pair)
                  `(set-tail-optimize-function
-                   ',(car pair)
-                   ,(cadr pair)))
+                    ',(car pair)
+                    ,(cadr pair)))
                tail-optimizations)))
 
 (add-tail-optimizations
@@ -318,11 +291,11 @@ The return value is undefined.
 
 ;; example with:
 ;; (defalias 'defun 'defun-tail-call)
-;; (defun triangle (x &optional out)
-;;       "foo"
-;;       (let ((out (or out 0)))
-;;         (if (< x 1) out
-;;           (triangle (1- x) (+ x out)))))
+;; (defun-tail-call triangle (x &optional out)
+;;     "foo"
+;;     (let ((out (or out 0)))
+;;       (if (< x 1) out
+;;         (triangle (1- x) (+ x out)))))
 
 ;; (pp (get-real-function 'triangle))
 ;; (lambda
@@ -369,42 +342,42 @@ The return value is undefined.
 ;;        "foo"
 ;;         (apply #'+ xs))))
 
-(defmacro pdefun (name arglist &rest body)
-  "Like ordinary defun but uses pcases.  ARGLIST is strictly for
-advertising the canonical signature."
-  (declare (indent defun)
-           (advertised-calling-convention (NAME ARGLIST [DOCSTRING] &rest PATTERNS) ""))
-  (let ((args (gensym)))
-    `(defun-tail-call ,name (&rest ,args)
-       (declare (advertised-calling-convention ,arglist ""))
-       ,@(pcase body
-             (`(,(and docstring (pred stringp)) . ,body)
-              `(,docstring
-                (pcase ,args ,@body)))
-             (body
-              `((pcase ,args ,@body)))))))
+;; (defmacro pdefun (name arglist &rest body)
+;;   "Like ordinary defun but uses pcases.  ARGLIST is strictly for
+;; advertising the canonical signature."
+;;   (declare (indent defun)
+;;            (advertised-calling-convention (NAME ARGLIST [DOCSTRING] &rest PATTERNS) ""))
+;;   (let ((args (gensym)))
+;;     `(defun-tail-call ,name (&rest ,args)
+;;        (declare (advertised-calling-convention ,arglist ""))
+;;        ,@(pcase body
+;;            (`(,(and docstring (pred stringp)) . ,body)
+;;             `(,docstring
+;;               (pcase ,args ,@body)))
+;;            (body
+;;             `((pcase ,args ,@body)))))))
 
-(pdefun preverse (list | in out)
-                    "A simple test of pdefun."
-                    (`(,list)
-                     (preverse list nil))
+;; (pdefun preverse (list | in out)
+;;   "A simple test of pdefun."
+;;   (`(,list)
+;;    (preverse list nil))
 
-                    (`(nil ,reverse)
-                     reverse)
+;;   (`(nil ,reverse)
+;;    reverse)
 
-                    (`((,head . ,tail) ,reverse)
-                     (preverse tail `(,head . ,reverse))))
+;;   (`((,head . ,tail) ,reverse)
+;;    (preverse tail `(,head . ,reverse))))
 
-;;; Mutual recursion:
-(fset '1-step-back (lambda))
-(defun-tail-call 2-steps-forward (x y)
-  (if (> x y) x
-    (1-step-back (+ 2 x) y)))
-(defun-tail-call 1-step-back (x y)
-  (2-steps-forward (1- x) y))
+;; ;;; Mutual recursion:
+;; (fset '1-step-back (lambda))
+;; (defun-tail-call 2-steps-forward (x y)
+;;   (if (> x y) x
+;;     (1-step-back (+ 2 x) y)))
+;; (defun-tail-call 1-step-back (x y)
+;;   (2-steps-forward (1- x) y))
 
-(let-recur ((count 5000)
-            (acc   1))
-    (if (< count 1) acc
-      (recur (1- count)
-             (+ count acc))))
+;; (let-recur ((count 5000)
+;;             (acc   1))
+;;     (if (< count 1) acc
+;;       (recur (1- count)
+;;              (+ count acc))))

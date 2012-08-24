@@ -410,9 +410,9 @@ advertising the canonical signature."
   (`((,head . ,tail) ,reverse)
    (preverse tail `(,head . ,reverse))))
 
-(defvar eai-real< (symbol-function '<))
-(fset '<2 eai-real<)
-(fset '< eai-real<)
+;; (defvar eai-real< (symbol-function '<))
+;; (fset '<2 eai-real<)
+;; (fset '< eai-real<)
 ;; (defmacro < (num1 num2 &rest nums)
 ;;      "Return t if numbers are in increasing order.  All must be numbers or markers."
 ;;      `(and (<2 ,num1 ,num2)
