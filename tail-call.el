@@ -51,11 +51,11 @@
   (require 'cl))
 
 (when (fboundp 'defun~)
-    (or (eq (symbol-function 'defun~)
-            (symbol-function 'defun))
-        (defalias 'defun 'defun~)))
-(eval-after-load "tail-call"
-  '(defalias 'defun 'defun-tail-call))
+  (or (eq (symbol-function 'defun~)
+          (symbol-function 'defun))
+      (defalias 'defun 'defun~)))
+;; (eval-after-load "tail-call"
+;;   '(defalias 'defun 'defun-tail-call))
 
 (require 'cl-lib)
 (defvar real-defun (symbol-function 'defun))
@@ -197,9 +197,8 @@ The return value is undefined.
                                               (setq ,real-call
                                                     (catch :recur
                                                       (throw ',return
-                                                             (eval `(apply ,(get-real-function
-                                                                             (car ,real-call))
-                                                                           ',(cdr ,real-call))))))))))))))))))
+                                                             (apply (get-real-function (car ,real-call))
+                                                                    (cdr ,real-call)))))))))))))))))
         (if declarations
             (cons 'prog1 (cons def declarations))
           def)))))
@@ -214,7 +213,7 @@ The return value is undefined.
         (arglist (mapcar #'first bindings)))
     `(cl-labels
          ((tail-call--recur (&rest ,args)
-                                 (throw ',recur ,args))
+                            (throw ',recur ,args))
           (recur (&rest ,args)
                  (catch ',return
                    (while t
@@ -236,9 +235,9 @@ The return value is undefined.
 
 (defun tail-call-optimize (name form)
   (if (consp form)
-      (if (eq name (car form))
+      (if (functionp (car form))
           `(tail-call--recur (quote ,(car form))
-                                  ,@(cdr form))
+                             ,@(cdr form))
         (funcall (or (get-tail-optimize-function (car form))
                      (lambda (_ form) form))
                  name form))
@@ -365,20 +364,25 @@ The return value is undefined.
 ;;                 (pcase ,args ,@body)))
 ;;              (body
 ;;               `((pcase ,args ,@body)))))))
+
+
 ;; (pdefun preverse (list | in out)
 ;;                     "A simple test of pdefun."
 ;;                     (`(,list)
 ;;                      (preverse list nil))
-                    
+
 ;;                     (`(nil ,reverse)
 ;;                      reverse)
 
 ;;                     (`((,head . ,tail) ,reverse)
 ;;                      (preverse tail `(,head . ,reverse))))
 
+;;; Mutual recursion:
+;; (fset '1-step-back (lambda))
+;; (defun 2-steps-forward (x y)
+;;   (if (> x y) x
+;;     (1-step-back (+ 2 x) y)))
+;; (defun 1-step-back (x y)
+;;   (2-steps-forward (1- x) y))
 
-;; (pp (get-real-function 'preverse))
-
-;; (pp (symbol-function 'preverse))
-
-;;  (preverse (number-sequence 1 500))
+;; (1-step-back 0 2000)
