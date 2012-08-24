@@ -198,9 +198,8 @@ The return value is undefined.
                                               (setq ,real-call
                                                     (catch :recur
                                                       (throw ',return
-                                                             (eval `(apply ,(get-real-function
-                                                                             (car ,real-call))
-                                                                           ',(cdr ,real-call))))))))))))))))))
+                                                             (apply (get-real-function (car ,real-call))
+                                                                    (cdr ,real-call)))))))))))))))))
         (if declarations
             (cons 'prog1 (cons def declarations))
           def)))))
@@ -352,92 +351,39 @@ The return value is undefined.
 ;;        "foo"
 ;;         (apply #'+ xs))))
 
-(defmacro pdefun (name arglist &rest body)
-  "Like ordinary defun but uses pcases.  ARGLIST is strictly for
-advertising the canonical signature."
-  (declare (indent defun)
-           (advertised-calling-convention (NAME ARGLIST [DOCSTRING] &rest PATTERNS) ""))
-  (let ((args (gensym)))
-    `(defun ,name (&rest ,args)
-       (declare (advertised-calling-convention ,arglist ""))
-       ,@(pcase body
-             (`(,(and docstring (pred stringp)) . ,body)
-              `(,docstring
-                (pcase ,args ,@body)))
-             (body
-              `((pcase ,args ,@body)))))))
+;; (defmacro pdefun (name arglist &rest body)
+;;   "Like ordinary defun but uses pcases.  ARGLIST is strictly for
+;; advertising the canonical signature."
+;;   (declare (indent defun)
+;;            (advertised-calling-convention (NAME ARGLIST [DOCSTRING] &rest PATTERNS) ""))
+;;   (let ((args (gensym)))
+;;     `(defun ,name (&rest ,args)
+;;        (declare (advertised-calling-convention ,arglist ""))
+;;        ,@(pcase body
+;;              (`(,(and docstring (pred stringp)) . ,body)
+;;               `(,docstring
+;;                 (pcase ,args ,@body)))
+;;              (body
+;;               `((pcase ,args ,@body)))))))
 
 
-(pdefun preverse (list | in out)
-                    "A simple test of pdefun."
-                    (`(,list)
-                     (preverse list nil))
+;; (pdefun preverse (list | in out)
+;;                     "A simple test of pdefun."
+;;                     (`(,list)
+;;                      (preverse list nil))
 
-                    (`(nil ,reverse)
-                     reverse)
+;;                     (`(nil ,reverse)
+;;                      reverse)
 
-                    (`((,head . ,tail) ,reverse)
-                     (preverse tail `(,head . ,reverse))))
+;;                     (`((,head . ,tail) ,reverse)
+;;                      (preverse tail `(,head . ,reverse))))
 
-(fset '1-step-back (lambda))
-(defun 2-steps-forward (x y)
-  (if (> x y) x
-    (1-step-back (+ 2 x) y)))
-
-;; (pp (symbol-function '2-steps-forward))
-;; (closure
-;;  (t)
-;;  (&rest G102210)
-;;  (let
-;;      ((G102212
-;;        (cons '2-steps-forward G102210)))
-;;    (catch 'G102211
-;;      (while t
-;;        (setq G102212
-;;              (catch :recur
-;;                (throw 'G102211
-;;                       (eval
-;;                        `(apply ,(get-real-function
-;;                                  (car G102212))
-;;                                ',(cdr G102212))))))))))
-;; (pp (get-real-function '2-steps-forward))
-;; (lambda
-;;   (x y)
-;;   (if
-;;       (> x y)
-;;       y
-;;     (tail-call--recur '1-step-back
-;;                       (+ 2 x)
-;;                       y)))
-
+;;; Mutual recursion:
+;; (fset '1-step-back (lambda))
+;; (defun 2-steps-forward (x y)
+;;   (if (> x y) x
+;;     (1-step-back (+ 2 x) y)))
 ;; (defun 1-step-back (x y)
 ;;   (2-steps-forward (1- x) y))
 
-;; (pp (symbol-function '1-step-back))
-;; (closure
-;;  (t)
-;;  (&rest G102204)
-;;  (let
-;;      ((G102206
-;;        (cons '1-step-back G102204)))
-;;    (catch 'G102205
-;;      (while t
-;;        (setq G102206
-;;              (catch :recur
-;;                (throw 'G102205
-;;                       (eval
-;;                        `(apply ,(get-real-function
-;;                                  (car G102206))
-;;                                ',(cdr G102206))))))))))
-;; (pp (get-real-function '1-step-back))
-;; (lambda
-;;   (x y)
-;;   (tail-call--recur '2-steps-forward
-;;                     (1- x)
-;;                     y))
-
-;; (pp (get-real-function 'preverse))
-
-;; (pp (symbol-function 'preverse))
-
-;;  (preverse (number-sequence 1 500))
+;; (1-step-back 0 2000)
