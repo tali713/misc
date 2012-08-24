@@ -79,10 +79,10 @@ followed by the rest of the buffers."
 called in each buffer, using `with-current-buffer'."
   (let ((buf (gensym)))
     `(remove-if-not
-      (lambda (buf)
-        (with-current-buffer buf
+      (lambda (,buf)
+        (with-current-buffer ,buf
           ,expr))
-      (buffer-list frame))))
+      (buffer-list ,frame))))
 
 (defun ido-switch-buffer-with-mode (&optional mode)
   "Switch to another buffer using ido filtered to mode.
@@ -410,10 +410,8 @@ advertising the canonical signature."
   (`((,head . ,tail) ,reverse)
    (preverse tail `(,head . ,reverse))))
 
-(preverse '(1 2 3))
-
-(defvar real< (symbol-function '<))
-(fset '<2 real<)
+(defvar eai-real< (symbol-function '<))
+(fset '<2 eai-real<)
 (defmacro < (num1 num2 &rest nums)
   "Return t if numbers are in increasing order.  All must be numbers or markers."
   `(and (<2 ,num1 ,num2)
