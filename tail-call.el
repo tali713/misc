@@ -234,6 +234,16 @@ The return value is undefined.
                               'real-function
                               function)))
 
+;;; Old version
+;; (defun tail-call-optimize (name form)
+;;   (if (consp form)
+;;       (if (eq name (car form))
+;;           `(,tail-call--recur-sym ,@(cdr form))
+;;         (funcall (or (get-tail-optimize-function (car form))
+;;                      (lambda (_ form) form))
+;;                  name form))
+;;     form))
+
 (defun tail-call-optimize (name form)
   (if (consp form)
       (if (eq name :any)
@@ -359,32 +369,31 @@ The return value is undefined.
 ;;        "foo"
 ;;         (apply #'+ xs))))
 
-;; (defmacro pdefun (name arglist &rest body)
-;;   "Like ordinary defun but uses pcases.  ARGLIST is strictly for
-;; advertising the canonical signature."
-;;   (declare (indent defun)
-;;            (advertised-calling-convention (NAME ARGLIST [DOCSTRING] &rest PATTERNS) ""))
-;;   (let ((args (gensym)))
-;;     `(defun ,name (&rest ,args)
-;;        (declare (advertised-calling-convention ,arglist ""))
-;;        ,@(pcase body
-;;              (`(,(and docstring (pred stringp)) . ,body)
-;;               `(,docstring
-;;                 (pcase ,args ,@body)))
-;;              (body
-;;               `((pcase ,args ,@body)))))))
+(defmacro pdefun (name arglist &rest body)
+  "Like ordinary defun but uses pcases.  ARGLIST is strictly for
+advertising the canonical signature."
+  (declare (indent defun)
+           (advertised-calling-convention (NAME ARGLIST [DOCSTRING] &rest PATTERNS) ""))
+  (let ((args (gensym)))
+    `(defun-tail-call ,name (&rest ,args)
+       (declare (advertised-calling-convention ,arglist ""))
+       ,@(pcase body
+             (`(,(and docstring (pred stringp)) . ,body)
+              `(,docstring
+                (pcase ,args ,@body)))
+             (body
+              `((pcase ,args ,@body)))))))
 
+(pdefun preverse (list | in out)
+                    "A simple test of pdefun."
+                    (`(,list)
+                     (preverse list nil))
 
-;; (pdefun preverse (list | in out)
-;;                     "A simple test of pdefun."
-;;                     (`(,list)
-;;                      (preverse list nil))
+                    (`(nil ,reverse)
+                     reverse)
 
-;;                     (`(nil ,reverse)
-;;                      reverse)
-
-;;                     (`((,head . ,tail) ,reverse)
-;;                      (preverse tail `(,head . ,reverse))))
+                    (`((,head . ,tail) ,reverse)
+                     (preverse tail `(,head . ,reverse))))
 
 ;;; Mutual recursion:
 (fset '1-step-back (lambda))
@@ -393,3 +402,9 @@ The return value is undefined.
     (1-step-back (+ 2 x) y)))
 (defun-tail-call 1-step-back (x y)
   (2-steps-forward (1- x) y))
+
+(let-recur ((count 5000)
+            (acc   1))
+    (if (< count 1) acc
+      (recur (1- count)
+             (+ count acc))))
