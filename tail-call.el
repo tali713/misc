@@ -189,9 +189,10 @@ The return value is undefined.
                                         ;; recur form, instead the value itself is
                                         ;; returned (even if the call is itself
                                         ;; recursive).
-                                        (cl-flet ((,tail-call--recur-sym
-                                                   (&rest ,args)
-                                                   (throw ',recur ,args)))
+                                        ;;
+                                        ;; This is going to allow for proper
+                                        ;; tail-recursion
+                                        (let ((,real-call (cons ',name ,args)))
                                           (catch ',return
                                             (while t
                                               (setq ,real-call
