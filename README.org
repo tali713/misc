@@ -1,12 +1,17 @@
-misc
+Misc Utilities
 *  Miscellaneous utilities for elisp.
    This is a small but growing collection of some tools I have created for my
    own amusment or use.  It is not in any way recommended for general use and
    any problems you experiance are your own responsibility.
+
 ** tail-call.el
    Well, so this was created in one day, because it seemed like a good idea at
    the time.  It is still in great need of work, but it establishes a drop in
    replacement for defun that optmizes tail-recursion in lexical environments,
    and establishes a framework for extending to further optimizable forms.
 
-   Will soon include the capacity to handle non-self calls
+   Now optimizes all tail calls.
+
+* eai-tools.el
+  A small collection of elisp snippets from my .emacs, I use these, but have not
+  yet consolidated, documented or placed into cohesive libraries.
