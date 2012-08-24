@@ -143,7 +143,7 @@ The return value is undefined.
                                ;; Capture the body and optimize its tail position.
                                (let ((old-body (copy-tree body)))
                                  (setcar (last body)
-                                         (tail-call-optimize name (car (last body))))
+                                         (tail-call-optimize :any (car (last body))))
                                  ;; if the body is unchanged use the original form.
                                  (if (tree-equal old-body body)
                                      (cons 'lambda (cons arglist body))
@@ -236,14 +236,20 @@ The return value is undefined.
 
 (defun tail-call-optimize (name form)
   (if (consp form)
-      (if (functionp (car form))
-          `(tail-call--recur (quote ,(car form))
-                             ,@(cdr form))
-        (funcall (or (get-tail-optimize-function (car form))
-                     (lambda (_ form) form))
-                 name form))
+      (if (eq name :any)
+          (if (functionp (car form))
+              `(tail-call--recur (quote ,(car form))
+                                 ,@(cdr form))
+            (funcall (or (get-tail-optimize-function (car form))
+                         (lambda (_ form) form))
+                     name form))
+        (if (eq name (car form))
+            `(tail-call--recur ,@(cdr form))
+          (funcall (or (get-tail-optimize-function (car form))
+                       (lambda (_ form) form))
+                   name form)))
     form))
-
+ 
 (defmacro set-tail-optimize-function (symbol optimization-function)
   (declare (indent defun))
   `(plist-put (symbol-plist ,symbol) 'tail-optimize-fun
@@ -340,11 +346,13 @@ The return value is undefined.
 ;;                                  (car G72151))
 ;;                                ',(cdr G72151))))))))))
 
-;; (let-recur ((count 5)
-;;             (acc   1))
-;;     (if (< count 1) acc
-;;       (recur (1- count)
-;;              (* count acc))))
+;; (pp (tail-call-optimize-progn
+;;      'recur
+;;      '(let-recur ((count 5)
+;;                     (acc   1))
+;;             (if (< count 1) acc
+;;               (recur (1- count)
+;;                      (* count acc))))))
 
 ;; (pp (symbol-function
 ;;      (defun foo-simple (&rest xs)
@@ -379,11 +387,9 @@ The return value is undefined.
 ;;                      (preverse tail `(,head . ,reverse))))
 
 ;;; Mutual recursion:
-;; (fset '1-step-back (lambda))
-;; (defun 2-steps-forward (x y)
-;;   (if (> x y) x
-;;     (1-step-back (+ 2 x) y)))
-;; (defun 1-step-back (x y)
-;;   (2-steps-forward (1- x) y))
-
-;; (1-step-back 0 2000)
+(fset '1-step-back (lambda))
+(defun-tail-call 2-steps-forward (x y)
+  (if (> x y) x
+    (1-step-back (+ 2 x) y)))
+(defun-tail-call 1-step-back (x y)
+  (2-steps-forward (1- x) y))
