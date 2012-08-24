@@ -12,6 +12,6 @@ Misc Utilities
 
    Now optimizes all tail calls.
 
-* eai-tools.el
+** eai-tools.el
   A small collection of elisp snippets from my .emacs, I use these, but have not
   yet consolidated, documented or placed into cohesive libraries.
