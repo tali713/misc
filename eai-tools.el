@@ -77,7 +77,7 @@ followed by the rest of the buffers."
 (defmacro buffers-where (expr &optional frame)
   "Get the list of buffers where EXPR is true.  EXPR will be
 called in each buffer, using `with-current-buffer'."
-  (let ((buf (gensym)))
+  (let ((buf (cl-gensym)))
     `(remove-if-not
       (lambda (,buf)
         (with-current-buffer ,buf
@@ -249,7 +249,9 @@ On nonblank line, insert a blank line."
                          ,el))
                      ,list))))
 
+(defalias 'remove-when 'keep-unless)
 
+(defalias 'remove-unless 'keep-when)
 
 (defun region-as-string ()
   (buffer-substring (region-beginning)
@@ -333,7 +335,9 @@ On nonblank line, insert a blank line."
   `(mapcar (lambda (buf)
              (with-current-buffer buf
                ,exp))
-           ,buffer-list)) (defadvice custom-save-variables (around make-custom-safe-themes-first activate)
+           ,buffer-list))
+
+(defadvice custom-save-variables (around make-custom-safe-themes-first activate)
   (cl-flet ((string< (S1 S2) (and (not (string= "custom-safe-themes" S2))
                                   (or (string= "custom-safe-themes" S1)
                                       (string< S1 S2)))))
@@ -381,7 +385,7 @@ used in `pcase' "
 advertising the canonical signature."
   (declare (indent defun)
            (advertised-calling-convention (NAME ARGLIST [DOCSTRING] &rest PATTERNS) ""))
-  (let ((args (gensym)))
+  (let ((args (cl-gensym)))
     `(defun ,name (&rest ,args)
        (declare (advertised-calling-convention ,arglist ""))
        ,@(pcase body
@@ -394,7 +398,7 @@ advertising the canonical signature."
 
 (defmacro plambda (&rest pcases)
   (declare (indent defun))
-  (let ((args (gensym)))
+  (let ((args (cl-gensym)))
     `(lambda (,args)
        (pcase args ,@pcases))))
 
@@ -422,6 +426,24 @@ advertising the canonical signature."
 ;;                   ,@(cdr nums))
 ;;              t)))
 
+(defmacro with-current-buffer-first-window (buffer &rest body)
+  (let ((current-window (cl-gensym))
+        (new-window (cl-gensym)))
+    `(let ((,current-window (selected-window))
+           (,new-window (cl-first (ignore-errors (get-buffer-window-list ,buffer)))))
+       (if ,new-window
+           (progn (select-window ,new-window)
+                  ,@body
+                  (select-window ,current-window))
+         (with-current-buffer ,buffer
+           ,@body)))))
+
+
+(defun uninterned-symbol-p (symbol)
+  (not (eq symbol (intern (symbol-name symbol)))))
+
+(defun remove-uninterned (list)
+  (remove-when #'uninterned-symbol-p list))
 
 (provide 'eai-tools)
 ;;; eai-tools.el ends here
