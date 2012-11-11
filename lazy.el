@@ -25,16 +25,33 @@
 (defun force (lazy-value)
   (funcall lazy-value))
 
+(defmacro lazy (&rest body)
+  `(list :lazy (lambda () (progn ,@body))))
+
+(defun force (lazy-value)
+  (pcase lazy-value
+    (`(:lazy ,body)     
+     (funcall body))
+
+    (_
+     lazy-value)))
+
 (defmacro lazy-cons (a d)
   `(lazy (cons ,a ,d)))
 
+(defun force-cons (x)
+  (let ((cons (force x)))
+    (setcar x (car cons))
+    (setcdr x (cdr cons)))
+  x)
+
 (defun lazy-car (x)
-  (car (force x)))
+  (car (force-cons x)))
 
 (defun lazy-cdr (x)
-  (cdr (force x)))
+  (cdr (force-cons x)))
 
-(defvar lazy-integers
+(setq lazy-integers
   (cl-labels ((f (n)
                  (lazy-cons n (f (1+ n)))))
     (f 1)))

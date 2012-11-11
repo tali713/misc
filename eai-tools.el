@@ -333,14 +333,14 @@ On nonblank line, insert a blank line."
 (defmacro map-buffer (exp buffer-list)
   (declare (indent 1))
   `(mapcar (lambda (buf)
-             (with-current-buffer buf
-               ,exp))
+             (with-current-buffer buf ,exp))
            ,buffer-list))
 
 (defadvice custom-save-variables (around make-custom-safe-themes-first activate)
-  (cl-flet ((string< (S1 S2) (and (not (string= "custom-safe-themes" S2))
-                                  (or (string= "custom-safe-themes" S1)
-                                      (string< S1 S2)))))
+  (cl-flet ((string< (S1 S2)
+                     (and (not (string= "custom-safe-themes" S2))
+                          (or (string= "custom-safe-themes" S1)
+                              (string< S1 S2)))))
     ad-do-it))
 
 (defun fill-buffer ()
@@ -354,13 +354,9 @@ On nonblank line, insert a blank line."
        (save-window-excursion
          (with-current-buffer (find-file ,file)
            (let ((,output (progn ,@exprs)))
-             (unless ,already-visiting-p 
-               (save-buffer)
-               (kill-buffer))
+             (unless ,already-visiting-p  (save-buffer)
+                     (kill-buffer))
              ,output))))))
-
-
-
 
 (defmacro precur (fname args &rest pcases)
   "Intended for a common use case of pcase.  Establishes a
@@ -426,24 +422,119 @@ advertising the canonical signature."
 ;;                   ,@(cdr nums))
 ;;              t)))
 
-(defmacro with-current-buffer-first-window (buffer &rest body)
+(defmacro with-current-window-or-buffer (buffer &rest body)
   (let ((current-window (cl-gensym))
         (new-window (cl-gensym)))
-    `(let ((,current-window (selected-window))
-           (,new-window (cl-first (ignore-errors (get-buffer-window-list ,buffer)))))
-       (if ,new-window
-           (progn (select-window ,new-window)
-                  ,@body
-                  (select-window ,current-window))
-         (with-current-buffer ,buffer
-           ,@body)))))
-
+    `(let ((,window (ignore-errors (get-buffer-window ,buffer))))
+       (if ,window
+           (with-selected-window ,@body)
+         (with-current-buffer ,buffer ,@body)))))
 
 (defun uninterned-symbol-p (symbol)
   (not (eq symbol (intern (symbol-name symbol)))))
 
 (defun remove-uninterned (list)
   (remove-when #'uninterned-symbol-p list))
+
+(defun make-queue (&rest contents)
+  (let ((last (last contents)))
+    (lambda (msg &rest args)
+      (case msg
+        (:enqueue  (if contents (setcdr last args)
+                     (setq contents args))
+                   (setq last (last args))
+                   contents)
+        (:contents contents)
+        (:dequeue (prog1 (car contents)
+                    (setq contents (cdr contents))))
+        (:peek (car contents))))))
+
+(fset 'foo (make-queue))
+
+(defmacro replace-regexp-sexp (from to)
+  (let* ((to `((replace-quote ,to)))
+         (to (progn (replace-match-string-symbols to) 
+                    (car to))))
+    `(replace-regexp ,from '(replace-eval-replacement ,@to))))
+
+(defun replace-regexp-sexp-interactively (from to)
+  (interactive `(,(read-regexp "Regexp to Replace")
+                 ,(read-minibuffer (format "Replace with SEXP: "))))
+  (replace-regexp-sexp from to))
+
+(defun format-reindent-defun ()
+  (interactive)
+  (let ((beg (progn (beginning-of-defun)
+                    (point-marker)))
+        (end (progn (end-of-defun)
+                    (point-marker))))
+    (replace-regexp "\n *" " " nil beg end)
+    (goto-char beg)
+    (unwind-protect (while (and (< (point)
+                                   end)
+                                (search-forward ")"))
+                      (when (and (not (eq (get-text-property (point)
+                                                             'face)
+                                          'font-lock-string-face))
+                                 (not (delete-horizontal-space))
+                                 (looking-at (rx (not (any ")\n")))))
+                        (insert "\n")))
+      (indent-region beg end))
+    (goto-char end)
+    (open-line 1)))
+
+(defun format-reindent-defun
+  ()
+  (interactive)
+  (let
+      ((beg
+        (progn
+          (beginning-of-defun)
+          (point-marker)))
+       (end
+        (progn
+          (end-of-defun)
+          (point-marker))))
+    (replace-regexp "\n *" " " nil beg end)
+    (goto-char beg)
+    (unwind-protect
+        (while
+            (and
+             (<
+              (point)
+              end)
+             (search-forward ")"))
+          (when
+              (and
+               (not
+                (eq
+                 (get-text-property
+                  (point)
+                  'face)
+                 'font-lock-string-face))
+               (not
+                (delete-horizontal-space))
+               (looking-at
+                (rx
+                 (not
+                  (any ")\n")))))
+            (insert "\n")))
+      (indent-region beg end))
+    (goto-char end)
+    (open-line 1)))
+
+(defun parse-time-string-rfc3339 (time-string)
+  (destructuring-bind (year month day time zone)
+      (append (timezone-parse-date time-string) nil)
+    `(,@(subseq (parse-time-string time) 0 3)
+      ,(string-to-int day)
+      ,(string-to-int month)
+      ,(string-to-int year)
+      nil
+      nil
+      ,(if zone
+           (mod (* 60 (timezone-zone-to-minute zone)) (* 3600 24))
+         (car (current-time-zone))))))
 
 (provide 'eai-tools)
 ;;; eai-tools.el ends here
