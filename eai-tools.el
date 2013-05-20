@@ -62,8 +62,8 @@ If called interactively, reverse the text between point and mark."
     (insert reversed-string)))
 
 (defun buffer-major-mode (buf)
-  "Returns the of `major-mode' for buffer BUF."
-  (with-current-buffer buf major-mode))
+  "Returns the `major-mode' for buffer BUF."
+  (buffer-local-value 'major-mode buf))
 
 (defun buffers-with-mode (mode &optional frame)
   "Return a list of all existing live buffers whose mode is MODE.
@@ -380,7 +380,8 @@ used in `pcase' "
   "Like ordinary defun but uses pcases.  ARGLIST is strictly for
 advertising the canonical signature."
   (declare (indent defun)
-           (advertised-calling-convention (NAME ARGLIST [DOCSTRING] &rest PATTERNS) ""))
+           (advertised-calling-convention
+            (NAME ARGLIST [DOCSTRING] &rest PATTERNS) ""))
   (let ((args (cl-gensym)))
     `(defun ,name (&rest ,args)
        (declare (advertised-calling-convention ,arglist ""))
@@ -396,7 +397,7 @@ advertising the canonical signature."
   (declare (indent defun))
   (let ((args (cl-gensym)))
     `(lambda (,args)
-       (pcase args ,@pcases))))
+       (pcase ,args ,@pcases))))
 
 
 (pdefun preverse (list | in out)
@@ -483,42 +484,23 @@ advertising the canonical signature."
     (goto-char end)
     (open-line 1)))
 
-(defun format-reindent-defun
-  ()
+(defun format-reindent-defun ()
   (interactive)
-  (let
-      ((beg
-        (progn
-          (beginning-of-defun)
-          (point-marker)))
-       (end
-        (progn
-          (end-of-defun)
-          (point-marker))))
+  (let ((beg (progn (beginning-of-defun)
+                    (point-marker)))
+        (end (progn (end-of-defun)
+                    (point-marker))))
     (replace-regexp "\n *" " " nil beg end)
     (goto-char beg)
-    (unwind-protect
-        (while
-            (and
-             (<
-              (point)
-              end)
-             (search-forward ")"))
-          (when
-              (and
-               (not
-                (eq
-                 (get-text-property
-                  (point)
-                  'face)
-                 'font-lock-string-face))
-               (not
-                (delete-horizontal-space))
-               (looking-at
-                (rx
-                 (not
-                  (any ")\n")))))
-            (insert "\n")))
+    (unwind-protect (while (and (< (point)
+                                   end)
+                                (search-forward ")"))
+                      (when (and (not (eq (get-text-property (point)
+                                                             'face)
+                                          'font-lock-string-face))
+                                 (not (delete-horizontal-space))
+                                 (looking-at (rx (not (any ")\n")))))
+                        (insert "\n")))
       (indent-region beg end))
     (goto-char end)
     (open-line 1)))

@@ -12,20 +12,6 @@
 
 ;; this is really heavy, and probably needlessly so.
 (defmacro lazy (&rest body)
-  (let ((forced (cl-gensym))
-	(value (cl-gensym)))
-    `(let ((,forced nil)
-	   (,value nil))
-       (lambda ()
-	 (unless ,forced
-	   (setq ,value (progn ,@body))
-	   (setq ,forced t))
-	 ,value))))
-
-(defun force (lazy-value)
-  (funcall lazy-value))
-
-(defmacro lazy (&rest body)
   `(list :lazy (lambda () (progn ,@body))))
 
 (defun force (lazy-value)
@@ -122,3 +108,4 @@
 
 (provide 'lazy)
 ;;; lazy.el ends here
+;; 
